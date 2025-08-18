@@ -9,3 +9,9 @@ Route::resource('proyectos', ProyectoController::class);
 Route::get('/', function () {
     return redirect()->route('proyectos.index');
 });
+Route::get('/register', function () {
+    return view('auth.register');
+});
+Route::get('/login', function () {
+    return view('auth.login');
+});
