@@ -2,156 +2,77 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Proyecto;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Validator;
 
 class ProyectoController extends Controller
 {
-    public function __construct()
-    {
-        // VERIFICAMOS SI LA SESIÓN YA TIENE LOS PROYECTOS
-        if (!session()->has('proyectos')) {
-            // Si no los tiene (es la primera visita), creamos la colección inicial
-            $proyectos = new Collection([
-                ['id' => 1, 'nombre' => 'Modernización del Sistema de Ventas', 'fecha_inicio' => '2025-01-15', 'estado' => 'En progreso', 'responsable' => 'Ana Martínez', 'monto' => 120000.00],
-                ['id' => 2, 'nombre' => 'Desarrollo de App Móvil', 'fecha_inicio' => '2025-03-01', 'estado' => 'Completado', 'responsable' => 'Carlos Rodriguez', 'monto' => 75000.50],
-                ['id' => 3, 'nombre' => 'Migración a Servidores Cloud', 'fecha_inicio' => '2025-07-20', 'estado' => 'Planificado', 'responsable' => 'Sofía Gonzalez', 'monto' => 250000.00],
-            ]);
-            // Y la guardamos en la sesión
-            session(['proyectos' => $proyectos]);
-        }
-    }
-
-    /**
-     * 1. Listar todos los proyectos (desde la sesión).
-     */
     public function index()
     {
-        // Obtenemos los datos directamente desde la sesión
-        $proyectos = session('proyectos');
-        return view('proyectos.index', compact('proyectos'));
+        // Se especifica el guardia 'api'
+        $proyectos = Proyecto::where('created_by', auth()->guard('api')->user()->id)->get();
+        return response()->json($proyectos);
     }
 
-    /**
-     * Muestra el formulario para crear un nuevo proyecto.
-     */
-    public function create()
-    {
-        return view('proyectos.create');
-    }
-
-    /**
-     * 2. Agrega un proyecto nuevo (en la sesión).
-     */
     public function store(Request $request)
     {
-        // Obtenemos los proyectos actuales de la sesión
-        $proyectos = session('proyectos');
+        $validator = Validator::make($request->all(), [
+            'nombre' => 'required|string|max:255',
+            'fecha_inicio' => 'required|date',
+            'estado' => 'required|string|max:100',
+            'responsable' => 'required|string|max:255',
+            'monto' => 'required|numeric',
+        ]);
 
-        // Creamos un ID nuevo y único
-        $newId = $proyectos->max('id') + 1;
+        if ($validator->fails()) {
+            return response()->json($validator->errors(), 422);
+        }
+        
+        $proyecto = Proyecto::create(array_merge(
+            $validator->validated(),
+            // Se especifica el guardia 'api'
+            ['created_by' => auth()->guard('api')->user()->id] 
+        ));
 
-        // Creamos el nuevo proyecto
-        $nuevoProyecto = [
-            'id' => $newId,
-            'nombre' => $request->input('nombre'),
-            'fecha_inicio' => $request->input('fecha_inicio'),
-            'estado' => $request->input('estado'),
-            'responsable' => $request->input('responsable'),
-            'monto' => (float) $request->input('monto'),
-        ];
-
-        // Añadimos el nuevo proyecto a la colección
-        $proyectos->push($nuevoProyecto);
-
-        // Guardamos la colección actualizada de vuelta en la sesión
-        session(['proyectos' => $proyectos]);
-
-        return redirect()->route('proyectos.index')
-            ->with('success', 'Proyecto agregado exitosamente (temporalmente).');
+        return response()->json($proyecto, 201);
     }
 
-    /**
-     * 5. Obtener un proyecto por su id (de la sesión).
-     */
     public function show($id)
     {
-        $proyectos = session('proyectos');
-        $proyecto = $proyectos->firstWhere('id', $id);
 
-        if (!$proyecto) {
-            abort(404);
-        }
-
-        return view('proyectos.show', compact('proyecto'));
+        
+        // Se especifica el guardia 'api'
+        $proyecto = Proyecto::where('created_by', auth()->guard('api')->user()->id)->where('id', $id)->firstOrFail();
+        return response()->json($proyecto);
     }
 
-    /**
-     * Muestra el formulario para editar un proyecto.
-     */
-    public function edit($id)
-    {
-        $proyectos = session('proyectos');
-        $proyecto = $proyectos->firstWhere('id', $id);
-        if (!$proyecto) {
-            abort(404);
-        }
-        return view('proyectos.edit', compact('proyecto'));
-    }
-
-
-
-    /* 4. Actualiza un proyecto por id (en la sesión).  */
     public function update(Request $request, $id)
     {
-        $proyectos = session('proyectos');
+        // Se especifica el guardia 'api'
+        $proyecto = Proyecto::where('created_by', auth()->guard('api')->user()->id)->where('id', $id)->firstOrFail();
 
-        // Buscamos el índice del proyecto a actualizar
-        $index = $proyectos->search(function ($proyecto) use ($id) {
-            return $proyecto['id'] == $id;
-        });
+        $validator = Validator::make($request->all(), [
+            'nombre' => 'string|max:255',
+            'fecha_inicio' => 'date',
+            'estado' => 'string|max:100',
+            'responsable' => 'string|max:255',
+            'monto' => 'numeric',
+        ]);
 
-        // Si encontramos el proyecto, procedemos a actualizar
-        if ($index !== false) {
-            // Creamos un array con los datos actualizados del proyecto
-            $proyectoActualizado = [
-                'id' => (int)$id, // Mantenemos el ID original
-                'nombre' => $request->input('nombre'),
-                'fecha_inicio' => $request->input('fecha_inicio'),
-                'estado' => $request->input('estado'),
-                'responsable' => $request->input('responsable'),
-                'monto' => (float) $request->input('monto'),
-            ];
-
-            // Reemplazamos el elemento antiguo con el nuevo en la colección
-            $proyectos->put($index, $proyectoActualizado);
-
-            // Guardamos la colección actualizada en la sesión
-            session(['proyectos' => $proyectos]);
+        if ($validator->fails()) {
+            return response()->json($validator->errors(), 422);
         }
 
-        return redirect()->route('proyectos.index')
-            ->with('success', "Proyecto ID: {$id} actualizado exitosamente (temporalmente).");
+        $proyecto->update($validator->validated());
+        return response()->json($proyecto);
     }
 
-
-
-    /**
-     * 3. Elimina un proyecto por id (de la sesión).
-     */
     public function destroy($id)
     {
-        $proyectos = session('proyectos');
-
-        // Filtramos la colección para remover el proyecto con el id correspondiente
-        $proyectosActualizados = $proyectos->reject(function ($proyecto) use ($id) {
-            return $proyecto['id'] == $id;
-        })->values(); // values() re-indexa el array
-
-        // Guardamos la nueva colección sin el elemento borrado
-        session(['proyectos' => $proyectosActualizados]);
-
-        return redirect()->route('proyectos.index')
-            ->with('success', "Proyecto ID: {$id} eliminado exitosamente (temporalmente).");
+        // Se especifica el guardia 'api'
+        $proyecto = Proyecto::where('created_by', auth()->guard('api')->user()->id)->where('id', $id)->firstOrFail();
+        $proyecto->delete();
+        return response()->noContent();
     }
 }
